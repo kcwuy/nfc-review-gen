@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>健身房好评生成器</title>
-
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -14,26 +13,22 @@
       background: #f5f7fa;
       color: #333;
     }
-
     h1 {
       text-align: center;
       color: #2c6fbb;
       margin-bottom: 30px;
     }
-
     .card {
       background: #ffffff;
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
-
     .btn-group {
       display: flex;
       gap: 12px;
       margin-bottom: 20px;
     }
-
     button {
       flex: 1;
       padding: 12px;
@@ -45,32 +40,26 @@
       cursor: pointer;
       transition: 0.2s;
     }
-
     button:hover {
       opacity: 0.9;
     }
-
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
     }
-
     #status {
       margin-top: 15px;
       min-height: 50px;
     }
-
     .success {
       color: #2e7d32;
       font-weight: bold;
     }
-
     .error {
       color: #d32f2f;
       font-weight: bold;
     }
-
-    pre {
+    #review-output {
       background: #f1f1f1;
       padding: 12px;
       border-radius: 6px;
@@ -78,13 +67,12 @@
       word-break: break-word;
       margin-top: 10px;
       font-size: 14px;
+      min-height: 24px;
     }
-
     .copy-btn {
       margin-top: 10px;
       background: #4caf50;
     }
-
     .footer {
       text-align: center;
       margin-top: 30px;
@@ -93,7 +81,6 @@
     }
   </style>
 </head>
-
 <body>
   <h1>💪 健身房好评生成器</h1>
 
@@ -102,7 +89,6 @@
       <button id="btn-private">私教课好评</button>
       <button id="btn-gym">自由健身好评</button>
     </div>
-
     <div id="status">点击按钮生成一条自然真实的好评 ✨</div>
   </div>
 
@@ -123,48 +109,52 @@
     async function generateReview(type) {
       btnPrivate.disabled = true;
       btnGym.disabled = true;
-      statusEl.innerHTML = "⏳ 正在生成中，请稍候...";
+      statusEl.innerHTML = `
+        <div id="review-output"></div>
+        <div id="copy-hint">⏳ 正在生成中...</div>
+      `;
+      const outputEl = document.getElementById("review-output");
+      const hintEl = document.getElementById("copy-hint");
+      let fullText = "";
 
       try {
         const response = await fetch("/api/generate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            prompt: PROMPTS[type]
-          })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: PROMPTS[type] })
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "生成失败");
+        if (!response.ok || !response.body) {
+          throw new Error("请求失败，请重试");
         }
 
-        const review = data.result;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
 
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          outputEl.textContent = fullText;
+          hintEl.textContent = "✅ 生成中...";
+        }
+
+        // 尝试自动复制
         try {
-          await navigator.clipboard.writeText(review);
-          statusEl.innerHTML = `
-            <div class="success">✅ 已自动复制到剪贴板！</div>
-            <pre>${review}</pre>
-          `;
+          await navigator.clipboard.writeText(fullText);
+          hintEl.innerHTML = '<span class="success">✅ 已自动复制到剪贴板！</span>';
         } catch {
-          statusEl.innerHTML = `
-            <div class="error">⚠️ 无法自动复制，请手动复制：</div>
-            <pre>${review}</pre>
-            <button class="copy-btn" onclick="copyText(\`${review.replace(/`/g, "\\`")}\`)">
-              📋 点击复制
+          hintEl.innerHTML = `
+            <span class="error">⚠️ 无法自动复制</span>
+            <button class="copy-btn" onclick="copyText(${JSON.stringify(fullText)})">
+              📋 手动复制
             </button>
           `;
         }
 
       } catch (err) {
-        statusEl.innerHTML = `
-          <div class="error">❌ 生成失败</div>
-          <p>${err.message}</p>
-        `;
+        statusEl.innerHTML = `<div class="error">❌ 生成失败：${err.message}</div>`;
       } finally {
         btnPrivate.disabled = false;
         btnGym.disabled = false;
