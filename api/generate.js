@@ -1,61 +1,85 @@
+// api/generate.js
+
+export const config = {
+  runtime: 'nodejs',
+};
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== 'POST') {
+    return res.status(405).end('Method not allowed');
   }
 
   const { prompt } = req.body;
 
-  // 校验 prompt
   if (!prompt || typeof prompt !== 'string') {
-    return res.status(400).json({ error: "Invalid or missing 'prompt'" });
+    return res.status(400).end('Invalid prompt');
   }
 
+  // 设置流式响应头
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
   try {
-    const response = await fetch(
-      "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+    const dashResponse = await fetch(
+      'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
       {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Authorization": `Bearer ${process.env.DASHSCOPE_API_KEY}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: "qwen-max", 
+          model: 'qwen-turbo', // ⚡️ 最快模型
           input: {
-            messages: [
-              {
-                role: "user",
-                content: prompt
-              }
-            ]
+            messages: [{ role: 'user', content: prompt }],
           },
           parameters: {
-            result_format: "message"
-            // 可选：添加 temperature, max_tokens 等
-          }
-        })
+            result_format: 'message',
+            stream: true,
+          },
+        }),
       }
     );
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("DashScope API Error:", data); // 方便调试
-      return res.status(response.status).json({
-        error: data.message || "DashScope 调用失败"
-      });
+    if (!dashResponse.ok || !dashResponse.body) {
+      throw new Error(`DashScope error: ${dashResponse.status}`);
     }
 
-    // 安全访问嵌套属性
-    const content = data?.output?.choices?.[0]?.message?.content;
-    if (!content) {
-      return res.status(500).json({ error: "Unexpected response format from DashScope" });
+    const reader = dashResponse.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') continue;
+
+          try {
+            const json = JSON.parse(dataStr);
+            const content = json.output?.choices?.[0]?.message?.content;
+            if (content) {
+              res.write(content);
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      }
     }
 
-    return res.status(200).json({ result: content.trim() });
+    res.end();
 
   } catch (error) {
-    console.error("Server error:", error); // 建议记录日志
-    return res.status(500).json({ error: "服务器内部错误" });
+    console.error('Streaming error:', error);
+    if (!res.writableEnded) {
+      res.status(500).end('Internal Server Error');
+    }
   }
 }
