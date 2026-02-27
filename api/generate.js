@@ -15,7 +15,7 @@ export default async function handler(req, res) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-  model: "qwen-3",
+  model: "qwen-3max",
   input: {
     messages: [
       {
