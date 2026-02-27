@@ -15,19 +15,19 @@ export default async function handler(req, res) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "qwen-turbo",
-          input: {
-            messages: [
-              {
-                role: "user",
-                content: prompt
-              }
-            ]
-          }
-        })
+  model: "qwen-turbo",
+  input: {
+    messages: [
+      {
+        role: "user",
+        content: prompt
       }
-    );
-
+    ]
+  },
+  parameters: {
+    result_format: "message"
+  }
+})
     const data = await response.json();
 
     if (!response.ok) {
